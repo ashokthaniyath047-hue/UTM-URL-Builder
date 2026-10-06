@@ -1,0 +1,1581 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>UTM Campaign Builder</title>
+<script>
+  // Apply theme before paint to avoid a flash
+  (function () {
+    var t = null;
+    try { t = JSON.parse(localStorage.getItem('utmb.theme')); } catch (e) {}
+    if (!t) t = window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    document.documentElement.setAttribute('data-theme', t);
+  })();
+</script>
+<style>
+  :root {
+    --bg: #f5f6f8; --panel: #ffffff; --panel-2: #f1f3f6; --border: #dde2e8; --text: #1a1e24; --muted: #667085;
+    --accent: #0f766e; --accent-ink: #ffffff; --accent-soft: #e3f3f0; --danger: #c0362c; --warn: #b45309; --ok: #15803d;
+    --mono: ui-monospace, SFMono-Regular, "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --radius: 8px; --shadow: 0 1px 2px rgba(16, 24, 40, .05);
+  }
+  [data-theme="dark"] {
+    --bg: #0d1117; --panel: #151b23; --panel-2: #1b222c; --border: #2a3340; --text: #e6edf3; --muted: #8b98a8;
+    --accent: #2dd4bf; --accent-ink: #04201d; --accent-soft: #10302c; --danger: #f87171; --warn: #fbbf24; --ok: #22c55e;
+    --shadow: none;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { margin: 0; }
+  body { background: var(--bg); color: var(--text); font: 14px/1.5 var(--sans); -webkit-font-smoothing: antialiased; }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  code, .mono { font-family: var(--mono); }
+
+  /* ---------- Top bar ---------- */
+  .topbar { position: sticky; top: 0; z-index: 30; display: flex; align-items: center; gap: 16px; padding: 10px 20px;
+    background: var(--bg); background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--border); }
+  .logo { font-family: var(--mono); font-weight: 700; letter-spacing: -.02em; font-size: 15px; white-space: nowrap; }
+  .logo .cursor { color: var(--accent); animation: blink 1.1s steps(1) infinite; }
+  .logo .slash { color: var(--muted); }
+  @keyframes blink { 50% { opacity: 0; } }
+  .tabs { display: flex; gap: 4px; }
+  .tab { background: none; border: 0; padding: 7px 12px; border-radius: 6px; color: var(--muted); cursor: pointer; font-weight: 500; white-space: nowrap; }
+  .tab:hover { color: var(--text); }
+  .tab.active { color: var(--text); background: var(--panel-2); box-shadow: inset 0 -2px 0 var(--accent); }
+  .tab .count { font-family: var(--mono); font-size: 11px; background: var(--border); padding: 1px 6px; border-radius: 10px; margin-left: 4px; }
+  .top-actions { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+  .icon-btn { background: transparent; border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; cursor: pointer; color: var(--muted); white-space: nowrap; }
+  .icon-btn:hover { color: var(--text); border-color: var(--muted); }
+  .badge { font-family: var(--mono); font-size: 11.5px; padding: 3px 8px; border-radius: 4px; background: var(--accent-soft); color: var(--accent); }
+  .ro-badge { display: none; }
+  .share-mode .tabs { display: none; }
+  .share-mode .ro-badge { display: inline-block; }
+
+  /* ---------- Layout ---------- */
+  main { max-width: 1240px; margin: 0 auto; padding: 20px; }
+  .layout { display: grid; grid-template-columns: minmax(0, 1fr) 430px; gap: 20px; align-items: start; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; margin-bottom: 16px; box-shadow: var(--shadow); }
+  .lbl { display: flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 11.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 8px; }
+  .lbl .num { color: var(--accent); }
+  .lbl .opt { text-transform: none; letter-spacing: 0; opacity: .75; }
+  .lbl .spacer { flex: 1; }
+  .input { width: 100%; background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; padding: 9px 11px; outline: none; transition: border-color .15s, box-shadow .15s; }
+  .input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .input-xl { font-size: 16px; padding: 12px 14px; font-family: var(--mono); }
+  .input.invalid { border-color: var(--danger); }
+  select.input { cursor: pointer; }
+  .field { margin-top: 20px; }
+  .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { border: 1px solid var(--border); background: var(--panel); border-radius: 6px; padding: 6px 11px; cursor: pointer; font-family: var(--mono); font-size: 12.5px; transition: background .12s, border-color .12s, color .12s; }
+  .chip:hover { border-color: var(--muted); }
+  .chip[aria-checked="true"], .chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  .chip:focus-visible, .btn:focus-visible, .tab:focus-visible, .icon-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .quick { margin-top: 8px; }
+  .quick .chip { font-size: 11.5px; padding: 4px 9px; }
+  .quick-lbl { font-size: 11px; color: var(--muted); font-family: var(--mono); margin-right: 2px; align-self: center; }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .hint.err { color: var(--danger); }
+  .linkbtn { background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; font-size: inherit; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .between { justify-content: space-between; }
+  .grow { flex: 1; min-width: 0; }
+  .date-wrap { display: flex; gap: 8px; }
+  .date-wrap .input { font-family: var(--mono); letter-spacing: .08em; max-width: 160px; }
+  .input.mono { font-family: var(--mono); font-size: 13px; }
+  .input:disabled { opacity: .6; cursor: not-allowed; }
+  .check { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--muted); margin-top: 8px; cursor: pointer; }
+  .check input { accent-color: var(--accent); margin: 0; cursor: pointer; }
+
+  /* ---------- Buttons ---------- */
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; border: 1px solid var(--border); background: var(--panel); border-radius: 6px; padding: 8px 14px; cursor: pointer; font-weight: 500; white-space: nowrap; transition: background .12s, border-color .12s, color .12s, filter .12s; }
+  .btn:hover:not(:disabled) { border-color: var(--muted); }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  .btn.primary:hover:not(:disabled) { filter: brightness(1.08); }
+  .btn.sm { padding: 5px 10px; font-size: 12.5px; }
+  .btn.xs { padding: 2px 8px; font-size: 11.5px; font-family: var(--mono); }
+  .btn.block { width: 100%; padding: 12px; font-size: 15px; }
+  .btn.ghost { background: transparent; }
+  .btn.danger { color: var(--danger); }
+  .btn.copied { background: var(--ok) !important; border-color: var(--ok) !important; color: #fff !important; }
+  .btn.failed { background: var(--danger) !important; border-color: var(--danger) !important; color: #fff !important; }
+
+  /* ---------- Output panel ---------- */
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
+  .sticky { position: sticky; top: 72px; max-height: calc(100vh - 88px); overflow-y: auto; }
+  .panel-head { padding: 11px 16px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; font-family: var(--mono); font-size: 12px; color: var(--muted); }
+  .panel-head > span:first-child { white-space: nowrap; }
+  .status { text-align: right; }
+  .status.ok { color: var(--ok); }
+  .status.missing { color: var(--warn); }
+  .out { padding: 14px 16px; border-bottom: 1px solid var(--border); }
+  .out-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; gap: 8px; }
+  .out-head .lbl { margin: 0; }
+  .code { font-family: var(--mono); font-size: 12.5px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; padding: 9px 10px; word-break: break-all; min-height: 38px; line-height: 1.55; }
+  .code.muted { color: var(--muted); }
+  .name-out { font-size: 13.5px; font-weight: 600; }
+  .tok.ph { color: var(--muted); font-weight: 400; opacity: .7; }
+  .tok.bad { color: var(--danger); text-decoration: wavy underline; }
+  .sep { color: var(--muted); font-weight: 400; }
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+  .seg button { border: 0; background: transparent; padding: 3px 10px; font-size: 11.5px; cursor: pointer; color: var(--muted); font-family: var(--mono); }
+  .seg button.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+  .panel-foot { padding: 14px 16px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .panel-tip { padding: 0 16px 12px; font-size: 11.5px; color: var(--muted); }
+  .kbd { font-family: var(--mono); font-size: 10.5px; border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; }
+
+  /* ---------- Bulk ---------- */
+  .bulk summary { cursor: pointer; list-style: none; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .bulk summary::-webkit-details-marker { display: none; }
+  .bulk summary::after { content: "▸"; color: var(--muted); transition: transform .15s; }
+  .bulk[open] summary::after { transform: rotate(90deg); }
+  .bulk-body { margin-top: 14px; border-top: 1px dashed var(--border); padding-top: 6px; }
+  .bulk-bar { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 18px; padding: 10px 12px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; }
+  .bulk-count { font-family: var(--mono); font-size: 12.5px; }
+  .bulk-count b { color: var(--accent); }
+  .table-wrap { margin-top: 10px; max-height: 420px; overflow: auto; border: 1px solid var(--border); border-radius: 6px; }
+  .tbl { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  .tbl th { position: sticky; top: 0; background: var(--panel-2); text-align: left; font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); padding: 7px 10px; border-bottom: 1px solid var(--border); }
+  .tbl td { padding: 6px 10px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  .tbl tr:last-child td { border-bottom: 0; }
+  .tbl td.n { color: var(--muted); font-family: var(--mono); width: 1%; }
+  .tbl td.nm { font-family: var(--mono); word-break: break-all; }
+  .tbl td.acts { white-space: nowrap; width: 1%; }
+  .tbl td.acts .btn + .btn { margin-left: 4px; }
+  .mini-link { font-family: var(--mono); font-size: 11px; color: var(--muted); text-transform: none; letter-spacing: 0; }
+
+  /* ---------- Campaigns list ---------- */
+  .toolbar { display: grid; grid-template-columns: 1fr 200px auto auto; gap: 8px; }
+  .item { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; margin-bottom: 10px; box-shadow: var(--shadow); }
+  .item:hover { border-color: var(--muted); }
+  .item-top { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+  .item-name { font-family: var(--mono); font-weight: 600; font-size: 13.5px; word-break: break-all; }
+  .item-time { font-size: 12px; color: var(--muted); white-space: nowrap; }
+  .item-url { font-family: var(--mono); font-size: 12px; color: var(--muted); margin-top: 4px; word-break: break-all; }
+  .tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
+  .tag { font-family: var(--mono); font-size: 11px; padding: 1px 7px; border-radius: 4px; background: var(--panel-2); border: 1px solid var(--border); color: var(--muted); }
+  .tag.brand { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+  .item-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+  .empty { text-align: center; padding: 48px 20px; color: var(--muted); border: 1px dashed var(--border); border-radius: var(--radius); }
+  .empty .big { font-family: var(--mono); font-size: 28px; color: var(--accent); margin-bottom: 6px; }
+
+  /* ---------- Share view ---------- */
+  .share-wrap { max-width: 760px; margin: 0 auto; }
+  .kv { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin: 16px 0; }
+  .kv div { background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px; }
+  .kv dt { font-family: var(--mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+  .kv dd { margin: 2px 0 0; font-family: var(--mono); font-size: 13px; word-break: break-all; }
+  .share-block { margin-top: 14px; }
+
+  /* ---------- Dialog / toast / misc ---------- */
+  dialog { border: 1px solid var(--border); border-radius: 10px; background: var(--panel); color: var(--text); padding: 0; width: min(560px, calc(100vw - 32px)); box-shadow: 0 20px 50px rgba(0,0,0,.25); }
+  dialog::backdrop { background: rgba(0, 0, 0, .45); }
+  .dlg { padding: 20px; }
+  .dlg-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+  .dlg-head h2 { margin: 0; font-size: 16px; font-family: var(--mono); }
+  .dlg hr { border: 0; border-top: 1px dashed var(--border); margin: 18px 0; }
+  .dlg details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+  .dlg textarea { margin-top: 8px; font-family: var(--mono); font-size: 12.5px; resize: vertical; }
+  .brand-preview { margin-top: 14px; max-height: 140px; overflow: auto; display: flex; flex-wrap: wrap; gap: 4px; }
+  .notice { margin-top: 8px; padding: 8px 10px; border: 1px dashed var(--warn); border-radius: 6px; font-size: 12.5px; color: var(--warn); }
+  .toast { position: fixed; left: 50%; bottom: 24px; transform: translate(-50%, 20px); opacity: 0; pointer-events: none; background: var(--text); color: var(--bg); padding: 10px 16px; border-radius: 8px; font-size: 13px; transition: opacity .2s, transform .2s; z-index: 100; max-width: calc(100vw - 32px); box-shadow: 0 8px 24px rgba(0,0,0,.2); }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); }
+  .toast.err { background: var(--danger); color: #fff; }
+  .mobilebar { display: none; }
+
+  /* ---------- Responsive ---------- */
+  @media (max-width: 960px) {
+    .layout { grid-template-columns: 1fr; }
+    .sticky { position: static; max-height: none; overflow-y: visible; }
+    .mobilebar { display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; gap: 10px; align-items: center; padding: 10px 14px calc(10px + env(safe-area-inset-bottom)); background: var(--panel); border-top: 1px solid var(--border); box-shadow: 0 -4px 16px rgba(0,0,0,.08); }
+    .mobilebar code { flex: 1; min-width: 0; font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--muted); }
+    body.on-create { padding-bottom: 72px; }
+    body.on-create .toast { bottom: 84px; }
+    .toolbar { grid-template-columns: 1fr 1fr; }
+    .toolbar #search { grid-column: 1 / -1; }
+  }
+  @media (max-width: 600px) {
+    main { padding: 12px; }
+    .topbar { padding: 8px 12px; gap: 8px; flex-wrap: wrap; }
+    .tabs { order: 3; width: 100%; }
+    .tab { flex: 1; }
+    .hide-sm { display: none; }
+    .card { padding: 14px; }
+    .field-row { grid-template-columns: 1fr; gap: 0; }
+    .panel-foot { grid-template-columns: 1fr; }
+    .item-top { flex-direction: column; gap: 2px; }
+    .sticky { top: 0; }
+  }
+</style>
+</head>
+<body class="on-create">
+
+<header class="topbar">
+  <div class="logo"><span class="cursor">▍</span>utm<span class="slash">/</span>builder</div>
+  <nav class="tabs" role="tablist">
+    <button class="tab active" role="tab" data-tab="create" aria-selected="true">Create Campaign</button>
+    <button class="tab" role="tab" data-tab="campaigns" aria-selected="false">My Campaigns<span class="count" id="campCount">0</span></button>
+  </nav>
+  <span class="badge ro-badge">read-only · shared campaign</span>
+  <div class="top-actions">
+    <button class="icon-btn" id="settingsBtn" title="Brand source (Google Sheet)">⚙<span class="hide-sm"> Brands</span></button>
+    <button class="icon-btn" id="themeBtn" title="Toggle dark mode" aria-label="Toggle dark mode">◐</button>
+  </div>
+</header>
+
+<main>
+  <!-- ================= CREATE ================= -->
+  <section id="tab-create" class="tabpanel">
+    <div class="layout">
+      <div class="col-form">
+        <div class="card">
+          <label class="lbl" for="landing"><span class="num">&gt;</span>Landing Page URL</label>
+          <input id="landing" class="input input-xl" type="url" inputmode="url" placeholder="https://yourstore.com/collections/new-arrivals" autocomplete="off" spellcheck="false">
+          <div class="hint" id="landingHint"></div>
+        </div>
+
+        <div class="card">
+          <div class="row between">
+            <select id="recentSelect" class="input grow" style="max-width:420px" aria-label="Load a recent campaign"></select>
+            <button id="resetBtn" class="btn ghost sm" type="button" title="Clear all campaign fields">Clear fields</button>
+          </div>
+
+          <div class="field-row">
+            <div class="field">
+              <label class="lbl" for="date"><span class="num">01</span>Date <span class="opt">DDMMYY</span></label>
+              <div class="date-wrap">
+                <input id="date" class="input" type="text" inputmode="numeric" maxlength="6" autocomplete="off" placeholder="DDMMYY">
+                <button type="button" class="btn sm" data-today>Today</button>
+              </div>
+              <div class="hint" id="dateHint"></div>
+            </div>
+            <div class="field">
+              <label class="lbl" for="brand"><span class="num">08</span>Brand
+                <span class="spacer"></span>
+                <button type="button" class="linkbtn mini-link" id="brandRefresh" title="Reload brands from Google Sheet">↻ sync</button>
+              </label>
+              <select id="brand" class="input"></select>
+              <div class="hint" id="brandHint"></div>
+              <div class="notice" id="brandEmpty" hidden>No brands loaded. <button type="button" class="linkbtn" data-open-settings>Connect your Google Sheet</button> to fill this list.</div>
+            </div>
+          </div>
+          <div class="chips quick" id="brandQuick" hidden></div>
+
+          <div id="chipFields"></div>
+
+          <div class="field">
+            <label class="lbl" for="theme"><span class="num">09</span>Theme <span class="opt">optional · free text</span></label>
+            <input id="theme" class="input" type="text" maxlength="60" placeholder="e.g. Diwali Sale, NewArrivals" autocomplete="off">
+            <div class="hint">Spaces &amp; special characters become “-” so URLs stay clean.</div>
+          </div>
+        </div>
+
+        <div class="card" id="destCard">
+          <div class="lbl"><span class="num">&gt;</span>Destination &amp; Tracking</div>
+          <div class="field">
+            <label class="lbl" for="site"><span class="num">10</span>Site</label>
+            <select id="site" class="input"></select>
+          </div>
+          <div class="field">
+            <label class="lbl" for="webPath"><span class="num">11</span>Web Path <span class="opt" id="webBaseLbl"></span></label>
+            <input id="webPath" class="input mono" type="text" placeholder="/products/trinetra-925-silver-rakhi" autocomplete="off" spellcheck="false">
+          </div>
+          <div class="field">
+            <label class="lbl" for="appPath"><span class="num">12</span>App Path <span class="opt" id="appBaseLbl"></span></label>
+            <input id="appPath" class="input mono" type="text" placeholder="/products/trinetra-925-silver-rakhi" autocomplete="off" spellcheck="false">
+            <label class="check"><input type="checkbox" id="samePathForApp" checked> Same as Web Path</label>
+          </div>
+          <div class="field-row">
+            <div class="field">
+              <label class="lbl" for="source"><span class="num">13</span>Source Value</label>
+              <select id="source" class="input"></select>
+            </div>
+            <div class="field">
+              <label class="lbl" for="medium"><span class="num">14</span>Medium Value</label>
+              <select id="medium" class="input"></select>
+            </div>
+          </div>
+        </div>
+
+        <details class="card bulk" id="bulk">
+          <summary>
+            <span class="lbl" style="margin:0"><span class="num">⊞</span>Bulk campaign creator</span>
+            <span class="hint" style="margin:0 0 0 auto">A/B variations in one go</span>
+          </summary>
+          <div class="bulk-body">
+            <p class="hint">Select multiple values per field — every combination is generated. Date, Brand, Theme, Landing URL &amp; Destination come from the form above.</p>
+            <div id="bulkFields"></div>
+            <div class="bulk-bar">
+              <span class="bulk-count" id="bulkCount"></span>
+              <div class="row">
+                <button type="button" id="bulkCopyBtn" class="btn sm">⧉ Copy all</button>
+                <button type="button" id="bulkCsvBtn" class="btn sm">↓ Download CSV</button>
+                <button type="button" id="bulkSaveBtn" class="btn sm primary">＋ Save all</button>
+              </div>
+            </div>
+            <div class="hint" id="bulkMsg"></div>
+            <div class="table-wrap" id="bulkTableWrap" hidden>
+              <table class="tbl">
+                <thead><tr><th>#</th><th>Campaign name</th><th>Copy</th></tr></thead>
+                <tbody id="bulkBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </details>
+      </div>
+
+      <aside class="col-panel">
+        <div class="panel sticky">
+          <div class="panel-head"><span>// output</span><span id="status" class="status"></span></div>
+          <div class="out">
+            <div class="out-head"><span class="lbl">Campaign Name</span><button type="button" class="btn xs" data-copy="name">Copy</button></div>
+            <div class="code name-out" id="outName"></div>
+          </div>
+          <div class="out">
+            <div class="out-head"><span class="lbl">Web URL</span><button type="button" class="btn xs" data-copy="web">Copy Web URL</button></div>
+            <div class="code" id="outWeb"></div>
+          </div>
+          <div class="out">
+            <div class="out-head"><span class="lbl">App Deep Link</span><button type="button" class="btn xs" data-copy="app">Copy App Link</button></div>
+            <div class="code" id="outApp"></div>
+          </div>
+          <div class="out">
+            <div class="out-head"><span class="lbl">UTM Parameters</span><button type="button" class="btn xs" data-copy="utm">Copy UTM</button></div>
+            <div class="code" id="outUtm"></div>
+          </div>
+          <div class="out">
+            <div class="out-head"><span class="lbl">Google Analytics</span><button type="button" class="btn xs" data-copy="ga">Copy</button></div>
+            <div class="code" id="outGa"></div>
+          </div>
+          <div class="out">
+            <div class="out-head"><span class="lbl">Meta / Facebook</span><button type="button" class="btn xs" data-copy="meta">Copy</button></div>
+            <div class="code" id="outMeta"></div>
+          </div>
+          <div class="out">
+            <div class="out-head">
+              <span class="lbl">Full URL</span>
+              <div class="seg" id="platformSeg" role="group" aria-label="Platform">
+                <button type="button" data-platform="google">Google</button>
+                <button type="button" data-platform="meta">Meta</button>
+              </div>
+            </div>
+            <div class="code" id="outFull"></div>
+            <button type="button" class="btn primary block" data-copy="full" style="margin-top:10px">⧉ Copy Full URL</button>
+          </div>
+          <div class="panel-foot">
+            <button type="button" class="btn" id="saveBtn">＋ Save campaign</button>
+            <button type="button" class="btn" id="shareBtn">⇪ Copy share link</button>
+          </div>
+          <div class="panel-tip"><span class="kbd">Ctrl</span> + <span class="kbd">Enter</span> saves the campaign</div>
+        </div>
+      </aside>
+    </div>
+  </section>
+
+  <!-- ================= MY CAMPAIGNS ================= -->
+  <section id="tab-campaigns" class="tabpanel" hidden>
+    <div class="card">
+      <div class="toolbar">
+        <input id="search" class="input" type="search" placeholder="Search name, brand, theme, URL…  ( / )" autocomplete="off">
+        <select id="brandFilter" class="input" aria-label="Filter by brand"><option value="">All brands</option></select>
+        <button type="button" id="exportBtn" class="btn">↓ Export CSV</button>
+        <button type="button" id="clearAllBtn" class="btn ghost danger">Clear all</button>
+      </div>
+      <div class="hint" id="campMeta"></div>
+    </div>
+    <div id="campList"></div>
+  </section>
+
+  <!-- ================= SHARED (read-only) ================= -->
+  <section id="shareView" hidden>
+    <div class="share-wrap">
+      <div class="card" id="shareBody"></div>
+      <div class="row">
+        <button type="button" class="btn primary" id="shareLoadBtn">Load into builder</button>
+        <button type="button" class="btn" id="shareCloseBtn">Open empty builder</button>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div class="mobilebar" id="mobileBar">
+  <code id="mbName">—</code>
+  <button type="button" class="btn primary" data-copy="full">⧉ Copy Full URL</button>
+</div>
+
+<dialog id="settings">
+  <form method="dialog" class="dlg">
+    <div class="dlg-head">
+      <h2>⚙ Brand source</h2>
+      <button class="icon-btn" value="close" aria-label="Close">✕</button>
+    </div>
+    <label class="lbl" for="sheetUrl">Google Sheets CSV URL</label>
+    <input id="sheetUrl" class="input" type="url" spellcheck="false" placeholder="https://docs.google.com/spreadsheets/d/…/export?format=csv">
+    <p class="hint">Share the sheet as “Anyone with the link can view” <em>or</em> use File → Share → Publish to web → CSV. Regular sheet links are converted automatically. Brands are read from the column headed “Brand” (otherwise the first column).</p>
+    <div class="row">
+      <button type="button" class="btn primary" id="loadSheetBtn">Load brands</button>
+      <a id="sheetTestLink" class="linkbtn mini-link" target="_blank" rel="noopener" hidden>open CSV in new tab ↗</a>
+    </div>
+    <div id="sheetStatus" class="hint"></div>
+    <hr>
+    <details>
+      <summary>Or paste brands manually (one per line)</summary>
+      <textarea id="pasteBrands" class="input" rows="6" placeholder="Brand A&#10;Brand B"></textarea>
+      <div class="row" style="margin-top:8px"><button type="button" class="btn sm" id="savePasteBtn">Use these brands</button></div>
+    </details>
+    <div class="brand-preview" id="brandPreview"></div>
+  </form>
+</dialog>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ======================================================================
+     Config
+     ====================================================================== */
+  var SEP = '_';
+  var MEDIUM = 'cpc';
+  var PLATFORMS = {
+    google: { label: 'Google Analytics', source: 'google' },
+    meta:   { label: 'Meta / Facebook',  source: 'facebook' }
+  };
+  // Campaign name component order
+  var KEYS = ['date', 'adType', 'userType', 'funnel', 'audience', 'optEvent', 'format', 'brand', 'theme'];
+  var LABELS = {
+    date: 'Date', adType: 'Ad Type', userType: 'User Type', funnel: 'Funnel', audience: 'Audience Type',
+    optEvent: 'Optimisation Event', format: 'Format', brand: 'Brand', theme: 'Theme'
+  };
+  var PLACEHOLDER = {
+    date: 'DDMMYY', adType: 'ADTYPE', userType: 'USER', funnel: 'FUNNEL', audience: 'AUDIENCE',
+    optEvent: 'EVENT', format: 'FORMAT', brand: 'BRAND', theme: 'THEME'
+  };
+  var OPTIONS = {
+    adType:   ['Awareness', 'Traffic', 'Promotion', 'Conversion'],
+    userType: ['NU', 'RU', 'RM'],
+    funnel:   ['UF', 'MF', 'LF'],
+    audience: ['DT_SocialFollower', 'EG_ATC30D', 'INS_Last30D'],
+    optEvent: ['Reach', 'Aw', 'VC', 'LPV', 'ATC', 'Install', 'Purchase'],
+    format:   ['Catalog', 'Banner', 'Video', 'Collection']
+  };
+  var CHIP_KEYS = Object.keys(OPTIONS);
+  // Destination & tracking
+  // One entry per client site: web base URL + app deep-link scheme
+  var SITES = {
+    shaya: { label: 'Shaya by CaratLane', webBase: 'https://www.shayabycaratlane.com',
+             appScheme: 'allthingsbaby-com://' }, // client hasn't supplied a Shaya app scheme yet — kept the existing one
+    atb:   { label: 'All Things Baby', webBase: 'https://allthingsbaby.com', appScheme: 'allthingsbaby-com://' }
+  };
+  var DEFAULT_SITE = 'shaya';
+  var UTM_KEYS = { source: 'utm_source', medium: 'utm_medium', campaign: 'utm_campaign' };
+  var SOURCES = ['Facebook', 'Google', 'Believe', 'Clever Tap', 'ChatGPT'];
+  var MEDIUMS = ['cpc', 'Push', 'Whatsapp', 'Email'];
+  var BULK_MAX = 500;
+  var RECENT_MAX = 5;
+  var LS = {
+    campaigns: 'utmb.campaigns', recent: 'utmb.recent', sheetUrl: 'utmb.sheetUrl', brands: 'utmb.brands',
+    brandsAt: 'utmb.brandsAt', theme: 'utmb.theme', platform: 'utmb.platform'
+  };
+
+  /* ======================================================================
+     Helpers
+     ====================================================================== */
+  function $(s, r) { return (r || document).querySelector(s); }
+  function $$(s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); }
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+  function pad(n) { return String(n).padStart(2, '0'); }
+
+  var store = {
+    get: function (k, d) {
+      try { var v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch (e) { return d; }
+    },
+    set: function (k, v) {
+      try { localStorage.setItem(k, JSON.stringify(v)); return true; }
+      catch (e) { toast('Could not save — browser storage is full or disabled', 'err'); return false; }
+    }
+  };
+
+  function todayDDMMYY(d) {
+    d = d || new Date();
+    return pad(d.getDate()) + pad(d.getMonth() + 1) + String(d.getFullYear()).slice(-2);
+  }
+  function parseDDMMYY(s) {
+    if (!/^\d{6}$/.test(s)) return null;
+    var dd = +s.slice(0, 2), mm = +s.slice(2, 4), yy = 2000 + +s.slice(4, 6);
+    var d = new Date(yy, mm - 1, dd);
+    return (d.getFullYear() === yy && d.getMonth() === mm - 1 && d.getDate() === dd) ? d : null;
+  }
+  function humanDate(d) {
+    return d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+  }
+  // Free-text components (brand, theme): keep URL-safe, never contain the separator
+  function clean(s) {
+    return String(s || '').trim().replace(/[^A-Za-z0-9.\-]+/g, '-').replace(/-{2,}/g, '-').replace(/^-+|-+$/g, '');
+  }
+
+  function normalizeLanding(raw) {
+    raw = String(raw || '').trim();
+    if (!raw) return { url: null, err: '' };
+    var s = /^[a-z][a-z0-9+.\-]*:\/\//i.test(raw) ? raw : 'https://' + raw;
+    try {
+      var u = new URL(s);
+      if (!/^https?:$/.test(u.protocol)) return { url: null, err: 'URL must start with http:// or https://' };
+      if (u.hostname.indexOf('.') === -1 && u.hostname !== 'localhost') return { url: null, err: 'That doesn’t look like a valid domain' };
+      return { url: u, err: '' };
+    } catch (e) {
+      return { url: null, err: 'Invalid URL' };
+    }
+  }
+  // Shared UTM query builder — returns '' unless every value is present
+  function buildUtm(source, medium, name) {
+    var vals = [source, medium, name].map(function (v) { return String(v == null ? '' : v).trim(); });
+    if (vals.some(function (v) { return !v; })) return '';
+    return [UTM_KEYS.source, UTM_KEYS.medium, UTM_KEYS.campaign].map(function (k, i) {
+      return k + '=' + encodeURIComponent(vals[i]);
+    }).join('&');
+  }
+  function utmParams(platform, name) {
+    return buildUtm(PLATFORMS[platform].source, MEDIUM, name);
+  }
+
+  function defaultDest() {
+    return { site: DEFAULT_SITE, webPath: '', appPath: '', samePathForApp: true, sourceValue: SOURCES[0], mediumValue: MEDIUMS[0] };
+  }
+  // Coerce any (possibly legacy/missing) destination object into a safe shape
+  function normalizeDest(d) {
+    var o = defaultDest();
+    if (!d || typeof d !== 'object') return o;
+    if (SITES.hasOwnProperty(d.site)) o.site = d.site;
+    ['webPath', 'appPath', 'sourceValue', 'mediumValue'].forEach(function (k) {
+      if (typeof d[k] === 'string') o[k] = d[k];
+    });
+    // Earlier saves used `source` / `medium`
+    if (typeof d.sourceValue !== 'string' && typeof d.source === 'string') o.sourceValue = d.source;
+    if (typeof d.mediumValue !== 'string' && typeof d.medium === 'string') o.mediumValue = d.medium;
+    if (typeof d.samePathForApp === 'boolean') o.samePathForApp = d.samePathForApp;
+    if (o.samePathForApp) o.appPath = o.webPath;
+    return o;
+  }
+  // Path input → { path, query, hash } (UTM keys stripped), or null if empty/invalid.
+  // Accepts "/products/x", "products/x", or a full site / app URL pasted by mistake.
+  function parsePath(raw) {
+    var s = String(raw == null ? '' : raw).trim();
+    if (!s) return null;
+    var scheme = s.match(/^[a-z][a-z0-9+.\-]*:\/\//i);
+    if (scheme && !/^https?:\/\//i.test(scheme[0])) s = s.slice(scheme[0].length); // pasted app deep link
+    else if (scheme) {
+      try { var abs = new URL(s); s = abs.pathname + abs.search + abs.hash; } catch (e) { return null; }
+    }
+    try {
+      var u = new URL('/' + s.replace(/^\/+/, ''), 'https://path.invalid');
+      Object.keys(UTM_KEYS).forEach(function (k) { u.searchParams.delete(UTM_KEYS[k]); });
+      return { path: u.pathname, query: u.search.slice(1), hash: u.hash };
+    } catch (e) { return null; }
+  }
+  function joinLink(prefix, p, utm) {
+    if (!p || !utm) return '';
+    return prefix + '?' + (p.query ? p.query + '&' : '') + utm + p.hash;
+  }
+  function buildDestLinks(dest, name) {
+    var d = normalizeDest(dest), site = SITES[d.site];
+    var web = parsePath(d.webPath), app = parsePath(d.samePathForApp ? d.webPath : d.appPath);
+    var utm = name ? buildUtm(d.sourceValue, d.mediumValue, name) : '';
+    return {
+      utm: utm, hasWeb: !!web, hasApp: !!app,
+      webUrl: web ? joinLink(site.webBase + web.path, web, utm) : '',
+      appUrl: app ? joinLink(site.appScheme + app.path.replace(/^\/+/, ''), app, utm) : ''
+    };
+  }
+
+  function buildFullUrl(u, platform, name) {
+    var x = new URL(u.href);
+    var utm = [UTM_KEYS.source, UTM_KEYS.medium, UTM_KEYS.campaign];
+    if (utm.some(function (k) { return x.searchParams.has(k); })) {
+      utm.forEach(function (k) { x.searchParams.delete(k); });
+    }
+    var existing = x.search ? x.search.slice(1) + '&' : '';
+    x.search = existing + utmParams(platform, name);
+    return x.href; // hash fragment (if any) is preserved after the query
+  }
+
+  // Core computation: fields + landing → name, params, URLs
+  function compute(f, landing, dest) {
+    var missing = [], parts = [];
+    KEYS.forEach(function (k) {
+      var v = f[k] || '';
+      if (k === 'brand' || k === 'theme') v = clean(v);
+      if (k === 'date' && v && !parseDDMMYY(v)) { missing.push('Date (DDMMYY)'); parts.push({ k: k, v: v, bad: true }); return; }
+      if (!v) { if (k !== 'theme') missing.push(LABELS[k]); parts.push({ k: k, v: '' }); return; }
+      parts.push({ k: k, v: v });
+    });
+    var L = normalizeLanding(landing);
+    var r = {
+      complete: missing.length === 0, missing: missing, parts: parts,
+      name: '', gaParams: '', metaParams: '', gaUrl: '', metaUrl: '',
+      landing: L.url ? L.url.href : '', landingErr: L.err
+    };
+    if (r.complete) {
+      r.name = parts.filter(function (p) { return p.v; }).map(function (p) { return p.v; }).join(SEP);
+      r.gaParams = utmParams('google', r.name);
+      r.metaParams = utmParams('meta', r.name);
+      if (L.url) {
+        r.gaUrl = buildFullUrl(L.url, 'google', r.name);
+        r.metaUrl = buildFullUrl(L.url, 'meta', r.name);
+      }
+    }
+    // Web / app links are derived from the generated name — never stored
+    var links = buildDestLinks(dest, r.name);
+    r.utm = links.utm; r.webUrl = links.webUrl; r.appUrl = links.appUrl;
+    r.hasWebPath = links.hasWeb; r.hasAppPath = links.hasApp;
+    return r;
+  }
+
+  function makeRecord(fields, landing, r, dest) {
+    var f = {};
+    KEYS.forEach(function (k) { f[k] = fields[k] || ''; });
+    return {
+      id: uid(), name: r.name,
+      gaUrl: r.gaUrl || r.gaParams, metaUrl: r.metaUrl || r.metaParams,
+      gaParams: r.gaParams, metaParams: r.metaParams,
+      landing: r.landing || String(landing || '').trim(),
+      fields: f, dest: normalizeDest(dest), timestamp: Date.now()
+    };
+  }
+  function destKey(d) {
+    d = normalizeDest(d);
+    return [d.site, d.webPath.trim(), d.samePathForApp ? '' : d.appPath.trim(), d.sourceValue.trim(), d.mediumValue.trim()].join('\n');
+  }
+  function sameCampaign(a, b) {
+    return a.name === b.name && (a.landing || '') === (b.landing || '') && destKey(a.dest) === destKey(b.dest);
+  }
+
+  /* ---------- Clipboard (with fallbacks) ---------- */
+  function legacyCopy(text) {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;pointer-events:none';
+    document.body.appendChild(ta);
+    var sel = document.getSelection();
+    var prev = sel && sel.rangeCount ? sel.getRangeAt(0) : null;
+    var active = document.activeElement;
+    ta.focus(); ta.select(); ta.setSelectionRange(0, text.length);
+    var ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+    document.body.removeChild(ta);
+    if (prev && sel) { sel.removeAllRanges(); sel.addRange(prev); }
+    if (active && active.focus) active.focus();
+    return ok;
+  }
+  function copyText(text) {
+    if (navigator.clipboard && window.isSecureContext) {
+      return navigator.clipboard.writeText(text).then(function () { return true; }, function () { return legacyCopy(text); });
+    }
+    return Promise.resolve(legacyCopy(text));
+  }
+  function flash(btn, ok) {
+    if (!btn) return;
+    if (btn._flashT) clearTimeout(btn._flashT); else btn._flashLabel = btn.innerHTML;
+    btn.innerHTML = ok ? '✓ Copied' : '✕ Failed';
+    btn.classList.remove('copied', 'failed');
+    btn.classList.add(ok ? 'copied' : 'failed');
+    btn._flashT = setTimeout(function () {
+      btn.innerHTML = btn._flashLabel;
+      btn.classList.remove('copied', 'failed');
+      btn._flashT = null;
+    }, 2000);
+  }
+  function doCopy(text, btn) {
+    if (!text) { toast('Nothing to copy yet', 'err'); return Promise.resolve(false); }
+    return copyText(text).then(function (ok) {
+      if (ok) { flash(btn, true); return true; }
+      // Last resort: let the user copy manually so copying never dead-ends
+      window.prompt('Press Ctrl+C / ⌘+C to copy:', text);
+      return false;
+    });
+  }
+
+  var toastT;
+  function toast(msg, type) {
+    var t = $('#toast');
+    t.textContent = msg;
+    t.className = 'toast show' + (type === 'err' ? ' err' : '');
+    clearTimeout(toastT);
+    toastT = setTimeout(function () { t.className = 'toast'; }, 2600);
+  }
+
+  /* ---------- Base64url (unicode-safe) for share links ---------- */
+  function b64e(str) {
+    var bytes = new TextEncoder().encode(str), bin = '';
+    for (var i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+    return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }
+  function b64d(s) {
+    s = s.replace(/-/g, '+').replace(/_/g, '/');
+    while (s.length % 4) s += '=';
+    var bin = atob(s), bytes = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return new TextDecoder().decode(bytes);
+  }
+  function shareUrl(fields, landing, dest) {
+    var payload = { v: 1, l: landing || '', f: KEYS.map(function (k) { return fields[k] || ''; }), d: normalizeDest(dest) };
+    return location.href.split('#')[0] + '#share=' + b64e(JSON.stringify(payload));
+  }
+
+  /* ---------- CSV ---------- */
+  function parseCSV(text) {
+    text = text.replace(/^\uFEFF/, '');
+    var rows = [], row = [], field = '', q = false, i = 0, c;
+    while (i < text.length) {
+      c = text[i];
+      if (q) {
+        if (c === '"') { if (text[i + 1] === '"') { field += '"'; i += 2; continue; } q = false; i++; continue; }
+        field += c; i++; continue;
+      }
+      if (c === '"') { q = true; i++; continue; }
+      if (c === ',') { row.push(field); field = ''; i++; continue; }
+      if (c === '\r') { i++; continue; }
+      if (c === '\n') { row.push(field); rows.push(row); row = []; field = ''; i++; continue; }
+      field += c; i++;
+    }
+    if (field !== '' || row.length) { row.push(field); rows.push(row); }
+    return rows;
+  }
+  function csvCell(v) { return '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"'; }
+  var CSV_HEAD = ['campaign_name', 'date', 'ad_type', 'user_type', 'funnel', 'audience_type', 'optimisation_event',
+    'format', 'brand', 'theme', 'landing_page', 'ga_utm_params', 'meta_utm_params', 'ga_full_url', 'meta_full_url',
+    'utm_params', 'web_url', 'app_deep_link'];
+  function csvRow(fields, r) {
+    return [r.name].concat(KEYS.map(function (k) { return fields[k] || ''; }))
+      .concat([r.landing, r.gaParams, r.metaParams, r.gaUrl, r.metaUrl, r.utm || '', r.webUrl || '', r.appUrl || '']);
+  }
+  function downloadCSV(rows, filename) {
+    var csv = '\uFEFF' +[CSV_HEAD].concat(rows).map(function (r) { return r.map(csvCell).join(','); }).join('\r\n');
+    var blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+  }
+
+  /* ======================================================================
+     State
+     ====================================================================== */
+  function emptyFields() {
+    var f = {};
+    KEYS.forEach(function (k) { f[k] = ''; });
+    f.date = todayDDMMYY();
+    return f;
+  }
+  var state = { landing: '', fields: emptyFields(), dest: defaultDest(), platform: store.get(LS.platform, 'google') };
+  if (!PLATFORMS[state.platform]) state.platform = 'google';
+  var brands = store.get(LS.brands, []);
+  var campaigns = store.get(LS.campaigns, []);
+  var recent = store.get(LS.recent, []);
+  var current = compute(state.fields, state.landing, state.dest);
+  var sharedPayload = null;
+
+  /* ======================================================================
+     Create tab rendering
+     ====================================================================== */
+  function renderChipFields() {
+    var nums = { adType: '02', userType: '03', funnel: '04', audience: '05', optEvent: '06', format: '07' };
+    $('#chipFields').innerHTML = CHIP_KEYS.map(function (k) {
+      return '<div class="field"><div class="lbl" id="lbl-' + k + '"><span class="num">' + nums[k] + '</span>' + LABELS[k] + '</div>' +
+        '<div class="chips" role="radiogroup" aria-labelledby="lbl-' + k + '">' +
+        OPTIONS[k].map(function (o) {
+          return '<button type="button" class="chip" role="radio" aria-checked="false" data-key="' + k + '" data-val="' + esc(o) + '">' + esc(o) + '</button>';
+        }).join('') + '</div></div>';
+    }).join('');
+  }
+  function syncChips() {
+    $$('#chipFields .chip, #brandQuick .chip').forEach(function (c) {
+      c.setAttribute('aria-checked', String(state.fields[c.dataset.key] === c.dataset.val));
+    });
+  }
+
+  function renderBrandSelect() {
+    var sel = $('#brand'), cur = state.fields.brand;
+    var list = brands.slice();
+    if (cur && list.indexOf(cur) === -1) list.unshift(cur);
+    sel.innerHTML = '<option value="">' + (brands.length ? '— Select brand —' : '— No brands loaded —') + '</option>' +
+      list.map(function (b) { return '<option value="' + esc(b) + '">' + esc(b) + '</option>'; }).join('');
+    sel.value = cur;
+    $('#brandEmpty').hidden = brands.length > 0;
+    $('#brandRefresh').hidden = !store.get(LS.sheetUrl, '');
+    var at = store.get(LS.brandsAt, 0);
+    $('#brandHint').textContent = brands.length
+      ? brands.length + ' brands' + (at ? ' · synced ' + new Date(at).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' }) : '')
+      : '';
+    renderBrandQuick();
+  }
+  function renderBrandQuick() {
+    var freq = {};
+    campaigns.concat(recent).forEach(function (c) {
+      var b = c.fields && c.fields.brand;
+      if (b) freq[b] = (freq[b] || 0) + 1;
+    });
+    var top = Object.keys(freq).sort(function (a, b) { return freq[b] - freq[a]; }).slice(0, 6);
+    var host = $('#brandQuick');
+    host.hidden = !top.length;
+    host.innerHTML = top.length ? '<span class="quick-lbl">frequent:</span>' + top.map(function (b) {
+      return '<button type="button" class="chip" role="radio" aria-checked="false" data-key="brand" data-val="' + esc(b) + '">' + esc(b) + '</button>';
+    }).join('') : '';
+    syncChips();
+  }
+
+  function renderRecent() {
+    var sel = $('#recentSelect');
+    sel.innerHTML = '<option value="">' + (recent.length ? '↺ Load recent campaign (' + recent.length + ')' : '↺ No recent campaigns yet') + '</option>' +
+      recent.map(function (r) {
+        var f = r.fields || {};
+        var label = [f.date, f.brand, f.adType].filter(Boolean).join(' ') + (f.format ? ' · ' + f.format : '') + (f.theme ? ' · ' + f.theme : '');
+        return '<option value="' + esc(r.id) + '">' + esc(label) + '</option>';
+      }).join('');
+    sel.disabled = !recent.length;
+  }
+  function addRecent(rec) {
+    recent = [rec].concat(recent.filter(function (x) { return !sameCampaign(x, rec); })).slice(0, RECENT_MAX);
+    store.set(LS.recent, recent);
+    renderRecent();
+  }
+
+  function syncForm() {
+    $('#landing').value = state.landing;
+    $('#date').value = state.fields.date;
+    $('#theme').value = state.fields.theme;
+    syncDestForm();
+    renderBrandSelect();
+    syncChips();
+  }
+  function renderDestOptions() {
+    $('#site').innerHTML = Object.keys(SITES).map(function (k) {
+      return '<option value="' + k + '">' + esc(SITES[k].label) + '</option>';
+    }).join('');
+  }
+  // Fill a value dropdown; keep a legacy/unknown saved value selectable instead of silently dropping it
+  function fillValueSelect(sel, options, value) {
+    var list = options.slice();
+    if (value && list.indexOf(value) === -1) list.push(value);
+    $(sel).innerHTML = list.map(function (s) { return '<option value="' + esc(s) + '">' + esc(s) + '</option>'; }).join('');
+    $(sel).value = value;
+  }
+  function syncSiteLabels() {
+    $('#webBaseLbl').textContent = SITES[state.dest.site].webBase;
+    $('#appBaseLbl').textContent = SITES[state.dest.site].appScheme;
+  }
+  function syncDestForm() {
+    var d = state.dest;
+    $('#site').value = d.site;
+    syncSiteLabels();
+    fillValueSelect('#source', SOURCES, d.sourceValue);
+    fillValueSelect('#medium', MEDIUMS, d.mediumValue);
+    $('#webPath').value = d.webPath;
+    $('#samePathForApp').checked = d.samePathForApp;
+    $('#appPath').value = d.samePathForApp ? d.webPath : d.appPath;
+    $('#appPath').disabled = d.samePathForApp;
+  }
+
+  function loadFields(fields, landing, dest) {
+    var f = emptyFields();
+    KEYS.forEach(function (k) { if (fields && fields[k] != null) f[k] = String(fields[k]); });
+    state.fields = f;
+    state.dest = normalizeDest(dest);
+    state.landing = landing || '';
+    syncForm();
+    update();
+  }
+
+  function setCode(sel, text, muted) {
+    var el = $(sel);
+    el.textContent = text;
+    el.classList.toggle('muted', !!muted);
+  }
+  function renderName(parts) {
+    return parts.filter(function (p) { return !(p.k === 'theme' && !p.v); }).map(function (p) {
+      if (!p.v) return '<span class="tok ph" title="' + LABELS[p.k] + '">' + PLACEHOLDER[p.k] + '</span>';
+      return '<span class="tok' + (p.bad ? ' bad' : '') + '" title="' + LABELS[p.k] + '">' + esc(p.v) + '</span>';
+    }).join('<span class="sep">' + SEP + '</span>');
+  }
+
+  function update() {
+    var r = current = compute(state.fields, state.landing, state.dest);
+
+    $('#outName').innerHTML = renderName(r.parts);
+    var st = $('#status');
+    if (r.complete) { st.textContent = '● ready'; st.className = 'status ok'; }
+    else { st.textContent = '○ missing: ' + r.missing.join(', '); st.className = 'status missing'; }
+
+    setCode('#outGa', r.complete ? r.gaParams : 'utm_source=google&utm_medium=cpc&utm_campaign=…', !r.complete);
+    setCode('#outMeta', r.complete ? r.metaParams : 'utm_source=facebook&utm_medium=cpc&utm_campaign=…', !r.complete);
+
+    // Until a link is complete, show its full shape (muted, not copyable) with the missing parts marked
+    var camp = r.complete ? r.name : '…';
+    var full = state.platform === 'google' ? r.gaUrl : r.metaUrl;
+    if (r.landingErr) setCode('#outFull', '⚠ ' + r.landingErr, true);
+    else if (full) setCode('#outFull', full, false);
+    else setCode('#outFull', (r.landing || '{landing page URL}') + '?' + UTM_KEYS.source + '=' + PLATFORMS[state.platform].source +
+      '&' + UTM_KEYS.medium + '=' + MEDIUM + '&' + UTM_KEYS.campaign + '=' + camp, true);
+
+    var d = state.dest;
+    var utmPreview = r.utm || (UTM_KEYS.source + '=' + (d.sourceValue.trim() || '…') + '&' + UTM_KEYS.medium + '=' +
+      (d.mediumValue.trim() || '…') + '&' + UTM_KEYS.campaign + '=' + camp);
+    var webP = parsePath(d.webPath), appP = parsePath(d.samePathForApp ? d.webPath : d.appPath);
+    setCode('#outUtm', utmPreview, !r.utm);
+    var site = SITES[d.site];
+    setCode('#outWeb', r.webUrl || site.webBase + (webP ? webP.path : '/{web path}') + '?' + utmPreview, !r.webUrl);
+    setCode('#outApp', r.appUrl || site.appScheme + (appP ? appP.path.replace(/^\/+/, '') : '{app path}') + '?' + utmPreview, !r.appUrl);
+
+    $$('[data-copy="name"],[data-copy="ga"],[data-copy="meta"]').forEach(function (b) { b.disabled = !r.complete; });
+    $$('[data-copy="full"]').forEach(function (b) { b.disabled = !full; });
+    $$('[data-copy="utm"]').forEach(function (b) { b.disabled = !r.utm; });
+    $$('[data-copy="web"]').forEach(function (b) { b.disabled = !r.webUrl; });
+    $$('[data-copy="app"]').forEach(function (b) { b.disabled = !r.appUrl; });
+    $('#saveBtn').disabled = !r.complete;
+    $('#shareBtn').disabled = !r.complete;
+    $$('#platformSeg button').forEach(function (b) { b.classList.toggle('active', b.dataset.platform === state.platform); });
+
+    // Landing hint
+    var lh = $('#landingHint'), li = $('#landing');
+    li.classList.toggle('invalid', !!r.landingErr);
+    if (r.landingErr) { lh.textContent = r.landingErr; lh.className = 'hint err'; }
+    else {
+      lh.className = 'hint';
+      lh.textContent = r.landing && !/^https?:\/\//i.test(state.landing.trim()) ? 'Will use ' + r.landing : '';
+    }
+
+    // Date hint
+    var d = state.fields.date, today = todayDDMMYY(), dh = $('#dateHint'), parsed = parseDDMMYY(d);
+    $('#date').classList.toggle('invalid', !!d && !parsed);
+    if (d && !parsed) { dh.className = 'hint err'; dh.textContent = 'Use DDMMYY, e.g. ' + today; }
+    else if (parsed && d !== today) { dh.className = 'hint'; dh.innerHTML = esc(humanDate(parsed)) + ' · <button type="button" class="linkbtn" data-today>use today (' + today + ')</button>'; }
+    else if (parsed) { dh.className = 'hint'; dh.textContent = 'Today · ' + humanDate(parsed); }
+    else { dh.className = 'hint'; dh.textContent = ''; }
+
+    $('#mbName').textContent = r.complete ? r.name : 'Fill in campaign fields…';
+
+    if ($('#bulk').open) renderBulkResults();
+  }
+
+  /* ======================================================================
+     Actions
+     ====================================================================== */
+  function saveCurrent(silent) {
+    var r = current;
+    if (!r.complete) { toast('Missing: ' + r.missing.join(', '), 'err'); return; }
+    var rec = makeRecord(state.fields, state.landing, r, state.dest);
+    var idx = -1;
+    campaigns.some(function (c, i) { if (sameCampaign(c, rec)) { idx = i; return true; } return false; });
+    if (idx > -1) {
+      var existing = campaigns.splice(idx, 1)[0];
+      existing.timestamp = Date.now();
+      campaigns.unshift(existing);
+      rec = existing;
+      if (!silent) toast('Already saved — moved to top of My Campaigns');
+    } else {
+      campaigns.unshift(rec);
+      if (!silent) toast('Saved to My Campaigns');
+    }
+    store.set(LS.campaigns, campaigns);
+    addRecent(rec);
+    renderCampaigns();
+    renderBrandQuick();
+  }
+
+  /* ======================================================================
+     Bulk creator
+     ====================================================================== */
+  var bulkSel = {};
+  CHIP_KEYS.forEach(function (k) { bulkSel[k] = []; });
+  var bulkSeeded = false, bulkRows = [];
+
+  function renderBulkFields() {
+    $('#bulkFields').innerHTML = CHIP_KEYS.map(function (k) {
+      return '<div class="field"><div class="lbl">' + LABELS[k] +
+        ' <span class="opt">(' + bulkSel[k].length + ')</span><span class="spacer"></span>' +
+        '<button type="button" class="linkbtn mini-link" data-bulk-all="' + k + '">all</button> ' +
+        '<button type="button" class="linkbtn mini-link" data-bulk-none="' + k + '">none</button></div>' +
+        '<div class="chips">' + OPTIONS[k].map(function (o) {
+          return '<button type="button" class="chip" aria-pressed="' + (bulkSel[k].indexOf(o) > -1) + '" data-bulk-key="' + k + '" data-val="' + esc(o) + '">' + esc(o) + '</button>';
+        }).join('') + '</div></div>';
+    }).join('');
+  }
+
+  function computeBulk() {
+    var sizes = CHIP_KEYS.map(function (k) { return bulkSel[k].length; });
+    var n = sizes.reduce(function (a, b) { return a * b; }, 1);
+    var info = { n: n, sizes: sizes, rows: [], msg: '' };
+    var base = compute(state.fields, state.landing, state.dest);
+    var baseMissing = base.missing.filter(function (m) { return m === 'Brand' || m.indexOf('Date') === 0; });
+    if (baseMissing.length) { info.msg = 'Set ' + baseMissing.join(' & ') + ' in the form above first.'; return info; }
+    if (!n) { info.msg = 'Pick at least one value in every field.'; return info; }
+    if (n > BULK_MAX) { info.msg = 'Too many combinations (max ' + BULK_MAX + '). Narrow your selection.'; return info; }
+    var combos = [{}];
+    CHIP_KEYS.forEach(function (k) {
+      var vals = OPTIONS[k].filter(function (v) { return bulkSel[k].indexOf(v) > -1; });
+      var next = [];
+      combos.forEach(function (c) { vals.forEach(function (v) { var o = Object.assign({}, c); o[k] = v; next.push(o); }); });
+      combos = next;
+    });
+    info.rows = combos.map(function (c) {
+      var fields = Object.assign({}, state.fields, c);
+      return { fields: fields, r: compute(fields, state.landing, state.dest) };
+    });
+    if (!base.landing) info.msg = 'No landing URL — exports will contain UTM parameters only.';
+    return info;
+  }
+
+  function renderBulkResults() {
+    var info = computeBulk();
+    bulkRows = info.rows;
+    var factors = info.sizes.filter(function (s) { return s !== 1; });
+    $('#bulkCount').innerHTML = (factors.length ? factors.join(' × ') + ' = ' : '') + '<b>' + info.n + '</b> variation' + (info.n === 1 ? '' : 's');
+    $('#bulkMsg').textContent = info.msg;
+    $('#bulkMsg').className = 'hint' + (info.rows.length ? '' : ' err');
+    ['#bulkCopyBtn', '#bulkCsvBtn', '#bulkSaveBtn'].forEach(function (s) { $(s).disabled = !bulkRows.length; });
+    $('#bulkTableWrap').hidden = !bulkRows.length;
+    $('#bulkBody').innerHTML = bulkRows.map(function (row, i) {
+      var r = row.r;
+      return '<tr><td class="n">' + (i + 1) + '</td><td class="nm">' + esc(r.name) + '</td><td class="acts">' +
+        '<button type="button" class="btn xs" data-text="' + esc(r.name) + '" title="Copy campaign name">Name</button>' +
+        '<button type="button" class="btn xs" data-text="' + esc(r.gaUrl || r.gaParams) + '" title="' + esc(r.gaUrl || r.gaParams) + '">GA</button>' +
+        '<button type="button" class="btn xs" data-text="' + esc(r.metaUrl || r.metaParams) + '" title="' + esc(r.metaUrl || r.metaParams) + '">Meta</button>' +
+        (r.webUrl ? '<button type="button" class="btn xs" data-text="' + esc(r.webUrl) + '" title="' + esc(r.webUrl) + '">Web</button>' : '') +
+        (r.appUrl ? '<button type="button" class="btn xs" data-text="' + esc(r.appUrl) + '" title="' + esc(r.appUrl) + '">App</button>' : '') +
+        '</td></tr>';
+    }).join('');
+  }
+
+  /* ======================================================================
+     My Campaigns
+     ====================================================================== */
+  function filteredCampaigns() {
+    var terms = $('#search').value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    var b = $('#brandFilter').value;
+    return campaigns.filter(function (c) {
+      var f = c.fields || {};
+      if (b && f.brand !== b) return false;
+      if (!terms.length) return true;
+      var d = normalizeDest(c.dest);
+      var hay = [c.name, c.landing, f.brand, f.theme, SITES[d.site].label, d.webPath, d.appPath, d.sourceValue, d.mediumValue].join(' ').toLowerCase();
+      return terms.every(function (t) { return hay.indexOf(t) > -1; });
+    });
+  }
+
+  function renderCampaigns() {
+    $('#campCount').textContent = campaigns.length;
+
+    // Brand filter options
+    var bf = $('#brandFilter'), keep = bf.value, seen = {};
+    var used = campaigns.map(function (c) { return c.fields && c.fields.brand; })
+      .filter(function (b) { if (!b || seen[b]) return false; seen[b] = 1; return true; }).sort();
+    bf.innerHTML = '<option value="">All brands</option>' + used.map(function (b) { return '<option value="' + esc(b) + '">' + esc(b) + '</option>'; }).join('');
+    bf.value = used.indexOf(keep) > -1 ? keep : '';
+
+    var list = filteredCampaigns();
+    $('#campMeta').textContent = campaigns.length
+      ? (list.length === campaigns.length ? campaigns.length + ' saved campaigns' : list.length + ' of ' + campaigns.length + ' campaigns')
+      : '';
+    $('#exportBtn').disabled = !list.length;
+    $('#clearAllBtn').disabled = !campaigns.length;
+
+    var host = $('#campList');
+    if (!campaigns.length) {
+      host.innerHTML = '<div class="empty"><div class="big">∅</div>No campaigns saved yet.<br><button type="button" class="linkbtn" data-goto="create">Create your first campaign →</button></div>';
+      return;
+    }
+    if (!list.length) { host.innerHTML = '<div class="empty">No campaigns match your search.</div>'; return; }
+
+    host.innerHTML = list.map(function (c) {
+      var f = c.fields || {};
+      var links = buildDestLinks(c.dest, c.name);
+      var time = new Date(c.timestamp).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+      var tags = [f.adType, f.userType, f.funnel, f.audience, f.optEvent, f.format].filter(Boolean)
+        .map(function (t) { return '<span class="tag">' + esc(t) + '</span>'; }).join('');
+      return '<article class="item">' +
+        '<div class="item-top"><div class="item-name">' + esc(c.name) + '</div><div class="item-time">' + esc(time) + '</div></div>' +
+        (c.landing ? '<div class="item-url">' + esc(c.landing) + '</div>' : '') +
+        '<div class="tags">' + (f.brand ? '<span class="tag brand">' + esc(f.brand) + '</span>' : '') + tags +
+        (f.theme ? '<span class="tag">#' + esc(f.theme) + '</span>' : '') +
+        (links.webUrl || links.appUrl ? '<span class="tag">' + esc(SITES[normalizeDest(c.dest).site].label) + '</span>' : '') + '</div>' +
+        '<div class="item-actions">' +
+        '<button type="button" class="btn sm" data-act="load" data-id="' + esc(c.id) + '">↺ Load</button>' +
+        '<button type="button" class="btn sm" data-text="' + esc(c.gaUrl) + '">⧉ GA URL</button>' +
+        '<button type="button" class="btn sm" data-text="' + esc(c.metaUrl) + '">⧉ Meta URL</button>' +
+        (links.webUrl ? '<button type="button" class="btn sm" data-text="' + esc(links.webUrl) + '">⧉ Web URL</button>' : '') +
+        (links.appUrl ? '<button type="button" class="btn sm" data-text="' + esc(links.appUrl) + '">⧉ App Link</button>' : '') +
+        '<button type="button" class="btn sm" data-text="' + esc(c.name) + '">⧉ Name</button>' +
+        '<button type="button" class="btn sm" data-act="share" data-id="' + esc(c.id) + '">⇪ Share</button>' +
+        '<button type="button" class="btn sm ghost danger" data-act="del" data-id="' + esc(c.id) + '">Delete</button>' +
+        '</div></article>';
+    }).join('');
+  }
+
+  function findCampaign(id) {
+    for (var i = 0; i < campaigns.length; i++) if (campaigns[i].id === id) return campaigns[i];
+    return null;
+  }
+
+  /* ======================================================================
+     Tabs & routing (share view)
+     ====================================================================== */
+  function switchTab(name) {
+    $$('.tab').forEach(function (t) {
+      var on = t.dataset.tab === name;
+      t.classList.toggle('active', on);
+      t.setAttribute('aria-selected', String(on));
+    });
+    $('#tab-create').hidden = name !== 'create';
+    $('#tab-campaigns').hidden = name !== 'campaigns';
+    document.body.classList.toggle('on-create', name === 'create');
+    $('#mobileBar').hidden = name !== 'create';
+    if (name === 'campaigns') renderCampaigns();
+    window.scrollTo(0, 0);
+  }
+
+  function clearHash() {
+    history.replaceState(null, '', location.pathname + location.search);
+    route();
+  }
+
+  function outBlock(label, value, emptyText) {
+    return '<div class="share-block"><div class="out-head"><span class="lbl">' + esc(label) + '</span>' +
+      (value ? '<button type="button" class="btn xs" data-text="' + esc(value) + '">Copy</button>' : '') + '</div>' +
+      '<div class="code' + (value ? '' : ' muted') + '">' + esc(value || emptyText || '—') + '</div></div>';
+  }
+
+  function showShare(p) {
+    sharedPayload = p;
+    var fields = {};
+    KEYS.forEach(function (k, i) { fields[k] = String(p.f[i] == null ? '' : p.f[i]).slice(0, 120); });
+    var r = compute(fields, String(p.l || '').slice(0, 2000), p.d);
+    $('#shareBody').innerHTML =
+      '<div class="lbl"><span class="num">&gt;</span>Shared campaign</div>' +
+      '<div class="out-head"><span class="lbl">Campaign Name</span>' + (r.name ? '<button type="button" class="btn xs" data-text="' + esc(r.name) + '">Copy</button>' : '') + '</div>' +
+      '<div class="code name-out">' + (r.complete ? esc(r.name) : renderName(r.parts)) + '</div>' +
+      (r.complete ? '' : '<div class="hint err">This campaign is incomplete — missing ' + esc(r.missing.join(', ')) + '.</div>') +
+      '<dl class="kv">' + KEYS.map(function (k) {
+        return '<div><dt>' + esc(LABELS[k]) + '</dt><dd>' + esc(fields[k] || '—') + '</dd></div>';
+      }).join('') + '</dl>' +
+      outBlock('Landing page', r.landing, 'No landing page URL') +
+      outBlock('Google Analytics · UTM', r.gaParams) +
+      outBlock('Meta / Facebook · UTM', r.metaParams) +
+      outBlock('Google · Full URL', r.gaUrl, 'Needs a landing page URL') +
+      outBlock('Meta · Full URL', r.metaUrl, 'Needs a landing page URL') +
+      (r.hasWebPath || r.hasAppPath
+        ? outBlock('UTM Parameters', r.utm) + outBlock('Web URL', r.webUrl, 'No web path') + outBlock('App Deep Link', r.appUrl, 'No app path')
+        : '');
+    document.body.classList.add('share-mode');
+    $('#tab-create').hidden = true;
+    $('#tab-campaigns').hidden = true;
+    $('#mobileBar').hidden = true;
+    $('#shareView').hidden = false;
+    document.title = (r.name || 'Shared campaign') + ' · UTM Builder';
+    window.scrollTo(0, 0);
+  }
+
+  function route() {
+    var m = location.hash.match(/^#share=([A-Za-z0-9_\-]+)/);
+    if (m) {
+      var p = null;
+      try { p = JSON.parse(b64d(m[1])); } catch (e) { p = null; }
+      if (p && Array.isArray(p.f)) { showShare(p); return; }
+      toast('That share link is invalid or incomplete', 'err');
+      history.replaceState(null, '', location.pathname + location.search);
+    }
+    sharedPayload = null;
+    document.body.classList.remove('share-mode');
+    document.title = 'UTM Campaign Builder';
+    $('#shareView').hidden = true;
+    switchTab('create');
+  }
+
+  /* ======================================================================
+     Brands from Google Sheets
+     ====================================================================== */
+  // Candidate CSV URLs for a sheet link, tried in order until one works
+  function csvCandidates(url) {
+    url = url.trim();
+    if (/docs\.google\.com\/spreadsheets\/d\/e\//.test(url)) {
+      // Published-to-web link
+      url = url.replace('/pubhtml', '/pub');
+      if (!/output=csv/.test(url)) url += (url.indexOf('?') > -1 ? '&' : '?') + 'output=csv';
+      return [url];
+    }
+    var m = url.match(/docs\.google\.com\/spreadsheets\/d\/([A-Za-z0-9\-_]+)/);
+    if (m && !/format=csv|output=csv|tqx=out:csv/.test(url)) {
+      var base = 'https://docs.google.com/spreadsheets/d/' + m[1];
+      var gid = (url.match(/[#&?]gid=(\d+)/) || [])[1];
+      // No gid in the link → let Google pick the first tab (forcing gid=0 gives HTTP 400
+      // when the first tab isn't the original one)
+      var list = gid
+        ? [base + '/export?format=csv&gid=' + gid, base + '/gviz/tq?tqx=out:csv&gid=' + gid]
+        : [base + '/export?format=csv', base + '/gviz/tq?tqx=out:csv'];
+      if (gid) list.push(base + '/export?format=csv');
+      return list;
+    }
+    return [url];
+  }
+  function toCsvUrl(url) { return csvCandidates(url)[0]; }
+  function fetchCsv(urls) {
+    var lastErr;
+    return urls.reduce(function (p, u) {
+      return p.catch(function () {
+        return fetch(u, { cache: 'no-store' }).then(function (res) {
+          if (!res.ok) throw new Error('Sheet returned HTTP ' + res.status + '.');
+          return res.text();
+        }).then(function (text) {
+          if (/^\s*</.test(text)) throw new Error('Got a web page instead of CSV — make the sheet public or “Publish to web” as CSV.');
+          return text;
+        }).catch(function (e) {
+          // A CORS/network failure (TypeError) beats a later HTTP error as the more useful message
+          if (!(lastErr instanceof TypeError)) lastErr = e;
+          throw lastErr;
+        });
+      });
+    }, Promise.reject(new Error('No URL')));
+  }
+  function extractBrands(text) {
+    var rows = parseCSV(text).filter(function (r) { return r.some(function (c) { return c.trim(); }); });
+    if (!rows.length) return [];
+    function cell(r, c) { return ((rows[r] || [])[c] || '').trim(); }
+    // Look for a "Brand" / "Brands" / "Brand Name" label anywhere in the sheet
+    var hit = null;
+    rows.some(function (r, ri) {
+      var ci = r.findIndex(function (c) { return /^\s*brands?(\s*names?)?\s*:?\s*$/i.test(c); });
+      if (ci > -1) hit = { r: ri, c: ci };
+      return !!hit;
+    });
+    var vals;
+    if (hit && cell(hit.r, hit.c + 1) && !cell(hit.r + 1, hit.c)) {
+      // Row-label layout: label (often a merged cell) on the left, brands in the next column.
+      // Read down until the next label in the label column or a blank brand cell.
+      vals = [];
+      for (var i = hit.r; i < rows.length; i++) {
+        if (i > hit.r && cell(i, hit.c)) break;
+        if (!cell(i, hit.c + 1)) break;
+        vals.push(cell(i, hit.c + 1));
+      }
+    } else if (hit) {
+      // Header layout: brands listed under the label
+      vals = rows.slice(hit.r + 1).map(function (r) { return r[hit.c] || ''; });
+    } else {
+      var col = rows[0].findIndex(function (c) { return /brand/i.test(c); }), start = 1;
+      if (col < 0) { col = 0; start = /^(name|names|title)$/i.test((rows[0][0] || '').trim()) ? 1 : 0; }
+      vals = rows.slice(start).map(function (r) { return r[col] || ''; });
+    }
+    var seen = {}, out = [];
+    vals.forEach(function (raw) {
+      var v = raw.trim(), key = v.toLowerCase();
+      if (v && !seen[key]) { seen[key] = 1; out.push(v); }
+    });
+    return out.sort(function (a, b) { return a.localeCompare(b, undefined, { sensitivity: 'base' }); });
+  }
+  function setBrands(list) {
+    brands = list;
+    store.set(LS.brands, brands);
+    store.set(LS.brandsAt, Date.now());
+    renderBrandSelect();
+    renderBrandPreview();
+  }
+  function renderBrandPreview() {
+    $('#brandPreview').innerHTML = brands.map(function (b) { return '<span class="tag">' + esc(b) + '</span>'; }).join('');
+  }
+  function setSheetStatus(msg, err) {
+    var s = $('#sheetStatus');
+    s.textContent = msg;
+    s.className = 'hint' + (err ? ' err' : '');
+  }
+  var loadingBrands = false;
+  function loadBrands(url, silent) {
+    if (!url || loadingBrands) return Promise.resolve(false);
+    loadingBrands = true;
+    setSheetStatus('Loading…');
+    $('#brandRefresh').textContent = '↻ syncing…';
+    var csvUrl = toCsvUrl(url);
+    $('#sheetTestLink').href = csvUrl;
+    $('#sheetTestLink').hidden = false;
+    return fetchCsv(csvCandidates(url)).then(function (text) {
+      var list = extractBrands(text);
+      if (!list.length) throw new Error('No brands found in the sheet.');
+      store.set(LS.sheetUrl, url);
+      setBrands(list);
+      setSheetStatus('✓ ' + list.length + ' brands loaded');
+      if (!silent) toast(list.length + ' brands loaded');
+      return true;
+    }).catch(function (e) {
+      // Google omits CORS headers on refusals (private sheet → login redirect, bad ID → 404),
+      // so the browser only reports a generic TypeError.
+      var msg = e instanceof TypeError
+        ? (navigator.onLine === false ? 'You appear to be offline.'
+          : 'Google blocked the request — the sheet is most likely not public. In Google Sheets: Share → General access → “Anyone with the link” (Viewer), or File → Share → Publish to web → CSV. Use “open CSV in new tab” to check: it should download/show plain text, not a sign-in page.')
+        : /HTTP 400/.test(e.message)
+          ? e.message + ' If this is an uploaded Excel (.xlsx) file, open it and use File → Save as Google Sheets, then share that copy. Otherwise copy the link while the brands tab is open (so it includes #gid=…).'
+          : e.message;
+      setSheetStatus('✕ ' + msg, true);
+      if (!silent || !brands.length) toast(e instanceof TypeError ? 'Could not load brands — sheet is not publicly accessible (see ⚙ Brands)' : 'Could not load brands: ' + msg, 'err');
+      return false;
+    }).then(function (ok) {
+      loadingBrands = false;
+      $('#brandRefresh').textContent = '↻ sync';
+      return ok;
+    });
+  }
+  function openSettings() {
+    $('#sheetUrl').value = store.get(LS.sheetUrl, '');
+    renderBrandPreview();
+    var dlg = $('#settings');
+    if (typeof dlg.showModal === 'function') dlg.showModal(); else dlg.setAttribute('open', '');
+    setTimeout(function () { $('#sheetUrl').focus(); }, 30);
+  }
+
+  /* ======================================================================
+     Events
+     ====================================================================== */
+  $('#landing').addEventListener('input', function (e) { state.landing = e.target.value; update(); });
+  $('#date').addEventListener('input', function (e) {
+    var v = e.target.value.replace(/\D/g, '').slice(0, 6);
+    if (v !== e.target.value) e.target.value = v;
+    state.fields.date = v; update();
+  });
+  $('#theme').addEventListener('input', function (e) { state.fields.theme = e.target.value; update(); });
+  $('#brand').addEventListener('change', function (e) { state.fields.brand = e.target.value; syncChips(); update(); });
+
+  // Destination & tracking
+  $('#webPath').addEventListener('input', function (e) {
+    state.dest.webPath = e.target.value;
+    if (state.dest.samePathForApp) { state.dest.appPath = e.target.value; $('#appPath').value = e.target.value; }
+    update();
+  });
+  $('#appPath').addEventListener('input', function (e) { state.dest.appPath = e.target.value; update(); });
+  $('#samePathForApp').addEventListener('change', function (e) {
+    state.dest.samePathForApp = e.target.checked;
+    // Mirror on check; on uncheck keep the mirrored value as an editable starting point
+    state.dest.appPath = state.dest.webPath;
+    syncDestForm();
+    if (!e.target.checked) $('#appPath').focus();
+    update();
+  });
+  $('#site').addEventListener('change', function (e) { state.dest.site = e.target.value; syncSiteLabels(); update(); });
+  $('#source').addEventListener('change', function (e) { state.dest.sourceValue = e.target.value; update(); });
+  $('#medium').addEventListener('change', function (e) { state.dest.mediumValue = e.target.value; update(); });
+
+  $('#recentSelect').addEventListener('change', function (e) {
+    var id = e.target.value;
+    e.target.value = '';
+    for (var i = 0; i < recent.length; i++) {
+      if (recent[i].id === id) { loadFields(recent[i].fields, recent[i].landing, recent[i].dest); toast('Loaded ' + recent[i].name); break; }
+    }
+  });
+  $('#resetBtn').addEventListener('click', function () {
+    var landing = state.landing;
+    loadFields({}, landing);
+    toast('Fields cleared (landing URL kept)');
+  });
+
+  $('#saveBtn').addEventListener('click', function () { saveCurrent(); });
+  $('#shareBtn').addEventListener('click', function (e) {
+    if (!current.complete) return;
+    doCopy(shareUrl(state.fields, state.landing, state.dest), e.currentTarget).then(function (ok) {
+      if (ok) toast('Share link copied — teammates see a read-only view');
+    });
+  });
+
+  // Delegated clicks
+  document.addEventListener('click', function (e) {
+    var t = e.target.closest('button, [data-goto]');
+    if (!t) return;
+
+    if (t.hasAttribute('data-today')) {
+      state.fields.date = todayDDMMYY(); $('#date').value = state.fields.date; update(); return;
+    }
+    if (t.classList.contains('chip') && t.dataset.key) {
+      var k = t.dataset.key, v = t.dataset.val;
+      state.fields[k] = state.fields[k] === v ? '' : v;
+      if (k === 'brand') $('#brand').value = state.fields.brand;
+      syncChips(); update(); return;
+    }
+    if (t.dataset.bulkKey) {
+      var bk = t.dataset.bulkKey, bv = t.dataset.val, arr = bulkSel[bk], i = arr.indexOf(bv);
+      if (i > -1) arr.splice(i, 1); else arr.push(bv);
+      renderBulkFields(); renderBulkResults(); return;
+    }
+    if (t.dataset.bulkAll) { bulkSel[t.dataset.bulkAll] = OPTIONS[t.dataset.bulkAll].slice(); renderBulkFields(); renderBulkResults(); return; }
+    if (t.dataset.bulkNone) { bulkSel[t.dataset.bulkNone] = []; renderBulkFields(); renderBulkResults(); return; }
+
+    if (t.dataset.copy) {
+      var kind = t.dataset.copy, r = current, text = '';
+      if (kind === 'name') text = r.name;
+      else if (kind === 'ga') text = r.gaParams;
+      else if (kind === 'meta') text = r.metaParams;
+      else if (kind === 'full') text = state.platform === 'google' ? r.gaUrl : r.metaUrl;
+      else if (kind === 'utm') text = r.utm;
+      else if (kind === 'web') text = r.webUrl;
+      else if (kind === 'app') text = r.appUrl;
+      doCopy(text, t).then(function (ok) {
+        if (ok && /^(full|web|app)$/.test(kind)) addRecent(makeRecord(state.fields, state.landing, r, state.dest));
+      });
+      return;
+    }
+    if (t.hasAttribute('data-text')) { doCopy(t.dataset.text, t); return; }
+    if (t.dataset.platform) { state.platform = t.dataset.platform; store.set(LS.platform, state.platform); update(); return; }
+    if (t.dataset.tab) { switchTab(t.dataset.tab); return; }
+    if (t.dataset.goto) { switchTab(t.dataset.goto); return; }
+    if (t.hasAttribute('data-open-settings')) { openSettings(); return; }
+
+    if (t.dataset.act) {
+      var c = findCampaign(t.dataset.id);
+      if (!c) return;
+      if (t.dataset.act === 'load') { loadFields(c.fields, c.landing, c.dest); addRecent(c); switchTab('create'); toast('Loaded ' + c.name); }
+      else if (t.dataset.act === 'share') {
+        doCopy(shareUrl(c.fields, c.landing, c.dest), t).then(function (ok) { if (ok) toast('Share link copied'); });
+      } else if (t.dataset.act === 'del') {
+        if (!confirm('Delete “' + c.name + '”?')) return;
+        campaigns = campaigns.filter(function (x) { return x.id !== c.id; });
+        store.set(LS.campaigns, campaigns);
+        renderCampaigns(); renderBrandQuick();
+        toast('Campaign deleted');
+      }
+    }
+  });
+
+  // Bulk
+  $('#bulk').addEventListener('toggle', function () {
+    if (!this.open) return;
+    if (!bulkSeeded) {
+      CHIP_KEYS.forEach(function (k) { bulkSel[k] = state.fields[k] ? [state.fields[k]] : []; });
+      bulkSeeded = true;
+    }
+    renderBulkFields(); renderBulkResults();
+  });
+  $('#bulkCopyBtn').addEventListener('click', function (e) {
+    var head = ['Campaign Name', 'GA UTM', 'Meta UTM', 'GA Full URL', 'Meta Full URL', 'UTM', 'Web URL', 'App Deep Link'].join('\t');
+    var lines = bulkRows.map(function (row) {
+      var r = row.r;
+      return [r.name, r.gaParams, r.metaParams, r.gaUrl, r.metaUrl, r.utm, r.webUrl, r.appUrl].join('\t');
+    });
+    doCopy([head].concat(lines).join('\n'), e.currentTarget).then(function (ok) {
+      if (ok) toast(bulkRows.length + ' rows copied — paste straight into Sheets/Excel');
+    });
+  });
+  $('#bulkCsvBtn').addEventListener('click', function () {
+    downloadCSV(bulkRows.map(function (row) { return csvRow(row.fields, row.r); }),
+      'utm-bulk-' + (state.fields.date || todayDDMMYY()) + '-' + (clean(state.fields.brand) || 'campaigns') + '.csv');
+  });
+  $('#bulkSaveBtn').addEventListener('click', function () {
+    var added = 0, dup = 0;
+    bulkRows.slice().reverse().forEach(function (row) {
+      var rec = makeRecord(row.fields, state.landing, row.r, state.dest);
+      if (campaigns.some(function (c) { return sameCampaign(c, rec); })) { dup++; return; }
+      campaigns.unshift(rec); added++;
+    });
+    store.set(LS.campaigns, campaigns);
+    renderCampaigns(); renderBrandQuick();
+    toast('Saved ' + added + ' campaign' + (added === 1 ? '' : 's') + (dup ? ' (' + dup + ' already existed)' : ''));
+  });
+
+  // My Campaigns
+  $('#search').addEventListener('input', renderCampaigns);
+  $('#brandFilter').addEventListener('change', renderCampaigns);
+  $('#exportBtn').addEventListener('click', function () {
+    var list = filteredCampaigns();
+    downloadCSV(list.map(function (c) {
+      var links = buildDestLinks(c.dest, c.name);
+      return csvRow(c.fields || {}, {
+        name: c.name, landing: c.landing, gaParams: c.gaParams, metaParams: c.metaParams,
+        gaUrl: c.landing ? c.gaUrl : '', metaUrl: c.landing ? c.metaUrl : '',
+        utm: links.utm, webUrl: links.webUrl, appUrl: links.appUrl
+      });
+    }), 'utm-campaigns-' + todayDDMMYY() + '.csv');
+  });
+  $('#clearAllBtn').addEventListener('click', function () {
+    if (!confirm('Delete all ' + campaigns.length + ' saved campaigns? This cannot be undone.')) return;
+    campaigns = [];
+    store.set(LS.campaigns, campaigns);
+    renderCampaigns(); renderBrandQuick();
+    toast('All campaigns cleared');
+  });
+
+  // Share view
+  $('#shareLoadBtn').addEventListener('click', function () {
+    var p = sharedPayload;
+    if (!p) return;
+    var fields = {};
+    KEYS.forEach(function (k, i) { fields[k] = String(p.f[i] == null ? '' : p.f[i]); });
+    clearHash();
+    loadFields(fields, String(p.l || ''), p.d);
+    toast('Shared campaign loaded into builder');
+  });
+  $('#shareCloseBtn').addEventListener('click', clearHash);
+  window.addEventListener('hashchange', route);
+
+  // Settings
+  $('#settingsBtn').addEventListener('click', openSettings);
+  $('#brandRefresh').addEventListener('click', function () { loadBrands(store.get(LS.sheetUrl, '')); });
+  $('#loadSheetBtn').addEventListener('click', function () {
+    var url = $('#sheetUrl').value.trim();
+    if (!url) { setSheetStatus('Paste a Google Sheets URL first', true); return; }
+    loadBrands(url);
+  });
+  $('#sheetUrl').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); $('#loadSheetBtn').click(); }
+  });
+  $('#savePasteBtn').addEventListener('click', function () {
+    var list = extractBrands($('#pasteBrands').value.split(/\r?\n/).map(function (l) { return '"' + l.replace(/"/g, '""') + '"'; }).join('\n'));
+    if (!list.length) { toast('Paste at least one brand', 'err'); return; }
+    setBrands(list);
+    toast(list.length + ' brands saved');
+  });
+
+  // Theme
+  $('#themeBtn').addEventListener('click', function () {
+    var next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    store.set(LS.theme, next);
+  });
+
+  // Keyboard shortcuts
+  document.addEventListener('keydown', function (e) {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && !$('#tab-create').hidden) { e.preventDefault(); saveCurrent(); }
+    if (e.key === '/' && !$('#tab-campaigns').hidden && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) {
+      e.preventDefault(); $('#search').focus();
+    }
+  });
+
+  // Keep storage in sync across tabs
+  window.addEventListener('storage', function (e) {
+    if (e.key === LS.campaigns) { campaigns = store.get(LS.campaigns, []); renderCampaigns(); renderBrandQuick(); }
+    if (e.key === LS.recent) { recent = store.get(LS.recent, []); renderRecent(); }
+    if (e.key === LS.brands) { brands = store.get(LS.brands, []); renderBrandSelect(); }
+  });
+
+  /* ======================================================================
+     Init
+     ====================================================================== */
+  renderChipFields();
+  renderDestOptions();
+  syncForm();
+  renderRecent();
+  renderCampaigns();
+  update();
+  route();
+  // Show cached brands instantly, then refresh from the sheet in the background
+  var sheet = store.get(LS.sheetUrl, '');
+  if (sheet) loadBrands(sheet, true);
+})();
+</script>
+</body>
+</html>
